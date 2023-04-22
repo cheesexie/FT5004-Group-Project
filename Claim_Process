@@ -1,0 +1,100 @@
+// the purpose of this contract is to 
+/* 1. verify claim
+   2. Validate claim
+   4. generate compensation amount
+   5. check compensation amount against policy requirements
+   6. transfer compsensation to user  
+   
+  */
+
+// SPDX-License-Identifier: MIT
+pragma solidity ^0.8.0;
+
+// Import Oracle data feed contract
+import "Oracle.sol";
+
+// Import user smart contract
+import "User.sol";
+
+// Import token contract
+import "Token.sol"
+
+contract InsuranceClaim {
+
+    // Define variables
+    address public policyAddress;
+    uint public poolBalance;
+    uint public compensationAmount;
+    mapping(address => uint) public claimAmount;
+    mapping(address => bool) public isClaimValid;
+    mapping(address => bool) public isEligible;
+    mapping(address => bool) public isVerified;
+
+    // Define events
+    event ClaimValidated(address indexed claimant);
+    event CompensationTransferred(address indexed claimant, uint amount);
+    event EligibilityChecked(address indexed claimant, bool isEligible);
+    event VerificationChecked(address indexed claimant, bool isVerified);
+
+    // Constructor
+    constructor(address _policyAddress, uint _poolBalance) {
+        policyAddress = _policyAddress;
+        poolBalance = _poolBalance;
+    }
+
+    // Validate claim against policy and terms
+    function validateClaim(bytes32 _policyTermsHash) public {
+        require(msg.sender == policyAddress, "Only the policy holder can validate claims.");
+        // Check claim against policy terms hash
+        bytes32 claimHash = keccak256(abi.encodePacked(msg.sender, claimAmount[msg.sender]));
+        require(claimHash == _policyTermsHash, "Claim does not match policy terms.");
+        isClaimValid[msg.sender] = true;
+        emit ClaimValidated(msg.sender);
+    }
+
+    // Check pool balance
+    function checkPoolBalance() public view returns (uint) {
+        return poolBalance;
+    }
+
+    // Transfer compensation to claimer
+    function transferCompensation() public {
+        require(isClaimValid[msg.sender], "Claim has not been validated.");
+        require(claimAmount[msg.sender] <= poolBalance, "Insufficient funds in pool.");
+        compensationAmount = claimAmount[msg.sender];
+        poolBalance -= compensationAmount;
+        payable(msg.sender).transfer(compensationAmount);
+        emit CompensationTransferred(msg.sender, compensationAmount);
+    }
+
+    // Import data points from Oracle and validate claim
+    function validateClaimWithOracle(address _oracleAddress, bytes32 _dataPoint) public {
+        Oracle oracle = Oracle(_oracleAddress);
+        require(oracle.getDataPoint() == _dataPoint, "Claim is not valid according to Oracle data.");
+        isClaimValid[msg.sender] = true;
+        emit ClaimValidated(msg.sender);
+    }
+
+    // Verify user identity and eligibility of claim
+    function verifyIdentityAndEligibility(bool _isVerified, bool _isEligible) public {
+        // Implement your own identity verification process
+        require(_isVerified, "User identity could not be verified.");
+        isVerified[msg.sender] = true;
+        emit VerificationChecked(msg.sender, true);
+
+        // Implement your own eligibility verification process
+        require(_isEligible, "User is not eligible to make a claim.");
+        isEligible[msg.sender] = true;
+        emit EligibilityChecked(msg.sender, true);
+    }
+
+    // Add funds to pool
+    function addFundsToPool() public payable {
+        poolBalance += msg.value;
+    }
+
+    // Fallback function
+    fallback() external payable {
+        addFundsToPool();
+    }
+}
